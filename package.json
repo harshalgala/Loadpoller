@@ -1,0 +1,21 @@
+{
+  "name": "LoadPoller",
+  "version": "1.0.0",
+  "main": "loadbalancer.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.16.2",
+    "http": "0.0.0",
+    "line-reader": "^0.4.0",
+    "node-ansible": "^0.5.5",
+    "request": "^2.83.0",
+    "socket.io": "^2.0.4"
+  },
+  "devDependencies": {},
+  "description": ""
+}
