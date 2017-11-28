@@ -4,11 +4,20 @@ var express = require('express');
 var lineReader = require('line-reader');
 var exec = require('child_process').exec;
 var io = require('socket.io')(3002);
+var Ansible = require('node-ansible');
+var ansiblePlaybookCli = require('ansible-playbook-cli-js');
+
 // websocket server that website connects to.
 
 var app = express();
+var inventoryPath = "/home/harshal/Desktop/Loadpoller/inventory";
 var allIps = [];
-var inventoryPath = "/home/ubuntu/DevOpsMileStone4/MonitorTool/inventory_folder/inventory";
+var Options = ansiblePlaybookCli.Options;
+var AnsiblePlaybook = ansiblePlaybookCli.AnsiblePlaybook;
+var options = new Options(
+    /* currentWorkingDirectory */ 'test'
+);
+var ansiblePlaybook = new AnsiblePlaybook(options);
 
 /* TO do:
 1) Update timer
@@ -24,9 +33,9 @@ lineReader.eachLine(inventoryPath, function (line, last) {
 });
 
 for (var i = 1; i < allIps.length; i++) {
-	console.log(allIps[i]);
+	//console.log(allIps[i]);
 }
-console.log("here..........");
+//console.log("here..........");
 
 //requesting all instances
 var server = app.listen(3001, function () {
@@ -40,17 +49,24 @@ var server = app.listen(3001, function () {
 			if (allIps[i] == "") {
 				continue;
 			}
-			console.log("listening: " + allIps[i]);
+			//console.log("listening: "+allIps[i]);
 
-			request('http://54.186.131.90:3000/health', {
+			request('http://' + allIps[i] + '/health', {
 				json: true
 			}, (err, res) => {
-				console.log('Requesting');
+				//console.log('Requesting');
 				var cpu_usage = res.body;
 				if (cpu_usage > 30) {
-					console.log("Alert !!!! CPU utilization:" + cpu_usage);
-				} else {
+					console.log("!!Alert!! CPU utilization:" + cpu_usage);
+					ansiblePlaybook.command('thresholdmore.yml -i '+inventoryPath).then(function (data) {
+						console.log('data = ', data); 
+					  });				  
+					
+				} else if(cpu_usage< 10){
 					console.log("Running smoothly. CPU utilization:" + cpu_usage);
+					ansiblePlaybook.command('thresholdless.yml -i '+inventoryPath).then(function (data) {
+						console.log('data = ', data); 
+					  });					  
 				}
 				if (err) {
 					return console.log(err);
@@ -61,6 +77,7 @@ var server = app.listen(3001, function () {
 
 
 });
+
 
 app.use(function (req, res, next) {
 	console.log(req.method, req.url);
