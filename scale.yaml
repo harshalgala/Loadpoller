@@ -1,0 +1,596 @@
+---
+- name: Create AWS instance
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  remote_user: ubuntu
+ # change directory path
+  vars:
+    region: us-west-2
+    instance_type: t2.micro
+    ami: ami-6e1a0117
+    project_name: amise101
+    env: amise101
+  tasks:
+    - name: Create security group
+      ec2_group:
+        name: "{{ project_name }}_security_group"
+        description: "{{ project_name }} security group"
+        region: "{{ region }}"
+        rules:
+          - proto: all  # https
+            cidr_ip: 0.0.0.0/0
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+      register: test_firewall
+
+    - name: Create an EC2 key
+      ec2_key:
+        name: "{{ project_name }}-{{ env }}-key"
+        region: "{{ region }}"
+      register: ec2_key
+
+    - name: Save private key
+      copy: content="{{ ec2_key.key.private_key }}" dest="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/awskey.pem" mode=0600
+      when: ec2_key.changed
+
+    - name: Create an EC2 instance
+      ec2:
+        key_name: "{{ project_name }}-{{ env }}-key"
+        region: "{{ region }}"
+        group_id: "{{ test_firewall.group_id }}"
+        instance_type: "{{ instance_type }}"
+        image: "{{ ami }}"
+        wait: yes
+        count: 1
+        vpc_subnet_id: subnet-c7d1738e
+        assign_public_ip: yes
+      register: ec2
+
+    - name: Add new host
+      lineinfile: 
+        path: "/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/inventory_folder/inventory" 
+        insertafter: EOF 
+        line: "{{ ec2.instances[0].public_ip }} ansible_ssh_user= ubuntu ansible_ssh_private_key_file=/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/awskey.pem private_ip= {{ ec2.instances[0].private_ip }} public_ip= {{ ec2.instances[0].public_ip }}" 
+        state: present
+  
+    - name: Add all instance public IPs to host group
+      add_host: hostname={{ item.public_ip }} groupname=ec2hosts ansible_ssh_user=ubuntu ansible_ssh_private_key_file="/home/ubuntu/DevOps_Milestone4_Special/awskey.pem"
+      with_items: "{{ ec2.instances }}"
+
+    - name: Delete preexisting file if it exists
+      file:
+        path: newhost
+        state: absent
+      ignore_errors: yes
+
+    - name: Create newhost file
+      file:
+        path: newhost
+        mode: 0644
+        state: touch
+
+    - name: Add public ip to newhost file
+      lineinfile:
+        path: newhost
+        insertafter: EOF
+        line: "{{ ec2.instances[0].public_ip }}"
+        state: present
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 60
+        timeout: 320
+        state: started
+      with_items: "{{ ec2.instances }}"  
+
+- hosts: ec2hosts
+  name: add python
+  user: ubuntu
+  gather_facts: false
+
+  tasks:
+  
+    - name: install python 2
+      raw: test -e /usr/bin/python || (sudo apt -y update && sudo apt install -y python-minimal)
+      
+    - name: gather_facts
+      setup:
+
+- hosts: ec2hosts
+  gather_facts: yes
+  
+  vars:
+    ansible_user_id: ubuntu
+
+  tasks: 
+    - name: Install required packages
+      become: yes
+      apt:
+        package: "{{ item }}"
+        state: present
+        update_cache: yes
+      with_items:
+        - git
+
+    - name: Creating a code directory
+      become: yes
+      file: 
+        path: /home/{{ ansible_user_id }}/code
+        state: directory
+        recurse: yes
+
+    - name: Add oracle java apt repository key
+      become: yes
+      apt_repository: repo='ppa:webupd8team/java'
+
+    - name: Update all packages to the latest versions
+      become: yes
+      apt:
+        update_cache: yes
+
+    - name: Accept oracle license
+      become: yes
+      debconf: name='oracle-java8-installer' question='shared/accepted-oracle-license-v1-1' value='true' vtype='select'
+      changed_when: false
+
+    - name: Install jdk8
+      become: yes
+      apt: 
+        name: "{{item}}"
+        state: latest
+        update_cache: yes
+        cache_valid_time: 86400
+      with_items:
+        - oracle-java8-installer
+        - ca-certificates
+        - oracle-java8-set-default
+
+    - name: Download tomcat-9
+      become: yes
+      get_url:
+        url: http://archive.apache.org/dist/tomcat/tomcat-9/v9.0.0.M26/bin/apache-tomcat-9.0.0.M26.tar.gz
+        dest: /home/{{ ansible_user_id }}/code
+        mode: 755
+
+    - name: Extract Tomcat
+      become: yes
+      unarchive: src=/home/{{ansible_user_id}}/code/apache-tomcat-9.0.0.M26.tar.gz
+                 dest=/home/{{ ansible_user_id }}/code
+                 copy=no
+    
+    - name: Install MySQL
+      become: yes
+      apt:
+        deb: https://dev.mysql.com/get/mysql-apt-config_0.8.7-1_all.deb
+        update_cache: yes
+
+    - name: Install MySQL server
+      become: yes
+      apt:
+        package: mysql-server
+        state: present
+
+    - name: Start MySQL
+      become: yes
+      service: name=mysql state=started enabled=yes
+
+    - name: Stop MySQL
+      become: yes
+      service: name=mysql state=stopped
+    
+    - name: Creating an Empty Directory for Itrust
+      become: yes
+      file: 
+        path: /home/{{ ansible_user_id }}/code/Empty
+        state: directory
+        recurse: yes
+
+    - name: Change mod
+      become: yes
+      file:
+        path: /home/{{ansible_user_id}}/code/Empty/
+        mode: 0777
+        recurse: yes
+        force: yes
+
+    - name: Clone iTrust repository
+      git: 
+        repo: https://github.com/harshalgala/iTrust-v23
+        dest: /home/{{ansible_user_id}}/code/Empty
+        accept_hostkey: yes
+        force: yes
+
+    - name: Change mod
+      become: yes
+      file:
+        path: /home/{{ansible_user_id}}/code/Empty/iTrust/
+        mode: 0777
+        recurse: yes
+        force: yes
+
+    - name: Install Maven
+      become: yes
+      apt:
+        package: maven
+        state: present
+
+    - name: Maven compile
+      command: mvn compile 
+      args:
+        chdir: /home/{{ansible_user_id}}/code/Empty/iTrust/
+    
+    - name: Restart MySQL
+      become: yes
+      service: name=mysql state=restarted
+
+    - name: Enable MySQL lowercase table names
+      become: yes
+      ini_file: >
+        dest=/etc/mysql/my.cnf
+        section=mysqld
+        option=lower_case_table_names
+        value=1
+        backup=yes
+    - name: Changing Access
+      become: yes
+      command: mysql -u root -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY ''; SELECT plugin FROM mysql.user WHERE user='root'; UPDATE mysql.user SET plugin='mysql_native_password' WHERE user='root'; FLUSH PRIVILEGES;"
+
+    - name: Restart MySQL
+      become: yes
+      service: name=mysql state=restarted
+
+    - name: Maven package
+      command: mvn package -DskipTests
+      args:
+        chdir: /home/{{ansible_user_id}}/code/Empty/iTrust/
+
+    - name: Wait for iTrust-23.0.0.war
+      wait_for:
+        path: /home/{{ansible_user_id}}/code/Empty/iTrust/target/iTrust-23.0.0.war
+        state: present
+        delay: 10
+
+    - name: Copying the war file for building tomcat
+      become: yes
+      copy:
+        src: /home/{{ ansible_user_id }}/code/Empty/iTrust/target/iTrust-23.0.0.war
+        dest: /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/webapps/iTrust.war
+        mode: 777
+        remote_src: True
+        
+    - name: Change the port 
+      replace: 
+        path: /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/conf/server.xml
+        regexp: '8080'
+        replace: '80'
+      become: yes
+        
+    - name: Change mod
+      become: yes
+      become_user: root
+      file:
+        path: /home/{{ ansible_user_id }}/code
+        mode: 0777
+        recurse: yes
+        force: yes
+        state: directory
+
+    - name: start tomcat
+      become: yes
+      become_user: root
+      command: nohup /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/bin/startup.sh
+
+    - name: echo newhost
+      command: cat newhost
+      register: newhost_res
+      delegate_to: localhost
+
+
+    - name: Add to haproxy conf
+      lineinfile:
+        path: templates/haproxy.cfg
+        insertafter: EOF
+        line: "  server {{  newhost_res.stdout }}  {{  newhost_res.stdout }}:80 cookie A check"
+        backup: yes
+      delegate_to: localhost
+
+- hosts: localhost
+  gather_facts: yes
+
+  tasks: 
+
+    - name: Update HAProxy config
+      template: src=templates/haproxy.cfg dest=/etc/haproxy/haproxy.cfg backup=yes
+      notify: 
+        - restart haproxy
+      become: yes  
+
+
+  handlers:
+    - name: restart haproxy
+      service: name=haproxy state=restarted
+      become: yes
+
+
+
+
+
+
+
+
+
+
+  
+    - name: Add all instance public IPs to host group
+      add_host: hostname={{ item.public_ip }} groupname=ec2hosts ansible_ssh_user=ubuntu ansible_ssh_private_key_file="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/awskey.pem"
+      with_items: "{{ ec2.instances }}"
+
+    - name: Delete preexisting file if it exists
+      file:
+        path: newhost
+        state: absent
+      ignore_errors: yes
+
+    - name: Create newhost file
+      file:
+        path: newhost
+        mode: 0644
+        state: touch
+
+    - name: Add public ip to newhost file
+      lineinfile:
+        path: newhost
+        insertafter: EOF
+        line: "{{ ec2.instances[0].public_ip }}"
+        state: present
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 60
+        timeout: 320
+        state: started
+      with_items: "{{ ec2.instances }}"  
+
+- hosts: ec2hosts
+  name: add python
+  user: ubuntu
+  gather_facts: false
+
+  tasks:
+  
+    - name: install python 2
+      raw: test -e /usr/bin/python || (sudo apt -y update && sudo apt install -y python-minimal)
+      
+    - name: gather_facts
+      setup:
+
+- hosts: ec2hosts
+  gather_facts: yes
+  
+  vars:
+    ansible_user_id: ubuntu
+
+  tasks: 
+    - name: Install required packages
+      become: yes
+      apt:
+        package: "{{ item }}"
+        state: present
+        update_cache: yes
+      with_items:
+        - git
+
+    - name: Creating a code directory
+      become: yes
+      file: 
+        path: /home/{{ ansible_user_id }}/code
+        state: directory
+        recurse: yes
+
+    - name: Add oracle java apt repository key
+      become: yes
+      apt_repository: repo='ppa:webupd8team/java'
+
+    - name: Update all packages to the latest versions
+      become: yes
+      apt:
+        update_cache: yes
+
+    - name: Accept oracle license
+      become: yes
+      debconf: name='oracle-java8-installer' question='shared/accepted-oracle-license-v1-1' value='true' vtype='select'
+      changed_when: false
+
+    - name: Install jdk8
+      become: yes
+      apt: 
+        name: "{{item}}"
+        state: latest
+        update_cache: yes
+        cache_valid_time: 86400
+      with_items:
+        - oracle-java8-installer
+        - ca-certificates
+        - oracle-java8-set-default
+
+    - name: Download tomcat-9
+      become: yes
+      get_url:
+        url: http://archive.apache.org/dist/tomcat/tomcat-9/v9.0.0.M26/bin/apache-tomcat-9.0.0.M26.tar.gz
+        dest: /home/{{ ansible_user_id }}/code
+        mode: 755
+
+    - name: Extract Tomcat
+      become: yes
+      unarchive: src=/home/{{ansible_user_id}}/code/apache-tomcat-9.0.0.M26.tar.gz
+                 dest=/home/{{ ansible_user_id }}/code
+                 copy=no
+    
+    - name: Install MySQL
+      become: yes
+      apt:
+        deb: https://dev.mysql.com/get/mysql-apt-config_0.8.7-1_all.deb
+        update_cache: yes
+
+    - name: Install MySQL server
+      become: yes
+      apt:
+        package: mysql-server
+        state: present
+
+    - name: Start MySQL
+      become: yes
+      service: name=mysql state=started enabled=yes
+
+    - name: Stop MySQL
+      become: yes
+      service: name=mysql state=stopped
+    
+    - name: Creating an Empty Directory for Itrust
+      become: yes
+      file: 
+        path: /home/{{ ansible_user_id }}/code/Empty
+        state: directory
+        recurse: yes
+
+    - name: Change mod
+      become: yes
+      file:
+        path: /home/{{ansible_user_id}}/code/Empty/
+        mode: 0777
+        recurse: yes
+        force: yes
+
+    - name: Clone iTrust repository
+      git: 
+        repo: https://github.com/harshalgala/iTrust-v23
+        dest: /home/{{ansible_user_id}}/code/Empty
+        accept_hostkey: yes
+        force: yes
+
+    - name: Change mod
+      become: yes
+      file:
+        path: /home/{{ansible_user_id}}/code/Empty/iTrust/
+        mode: 0777
+        recurse: yes
+        force: yes
+
+    - name: Install Maven
+      become: yes
+      apt:
+        package: maven
+        state: present
+
+    - name: Maven compile
+      command: mvn compile 
+      args:
+        chdir: /home/{{ansible_user_id}}/code/Empty/iTrust/
+    
+    - name: Restart MySQL
+      become: yes
+      service: name=mysql state=restarted
+
+    - name: Enable MySQL lowercase table names
+      become: yes
+      ini_file: >
+        dest=/etc/mysql/my.cnf
+        section=mysqld
+        option=lower_case_table_names
+        value=1
+        backup=yes
+
+    - name: Changing Access
+      become: yes
+      command: mysql -u root -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' IDENTIFIED BY ''; SELECT plugin FROM mysql.user WHERE user='root'; UPDATE mysql.user SET plugin='mysql_native_password' WHERE user='root'; FLUSH PRIVILEGES;"
+
+    - name: Restart MySQL
+      become: yes
+      service: name=mysql state=restarted
+
+    - name: Maven package
+      command: mvn package -DskipTests
+      args:
+        chdir: /home/{{ansible_user_id}}/code/Empty/iTrust/
+
+    - name: Wait for iTrust-23.0.0.war
+      wait_for:
+        path: /home/{{ansible_user_id}}/code/Empty/iTrust/target/iTrust-23.0.0.war
+        state: present
+        delay: 10
+
+    - name: Copying the war file for building tomcat
+      become: yes
+      copy:
+        src: /home/{{ ansible_user_id }}/code/Empty/iTrust/target/iTrust-23.0.0.war
+        dest: /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/webapps/iTrust.war
+        mode: 777
+        remote_src: True
+        
+    - name: Change the port 
+      replace: 
+        path: /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/conf/server.xml
+        regexp: '8080'
+        replace: '80'
+      become: yes
+        
+    - name: Change mod
+      become: yes
+      become_user: root
+      file:
+        path: /home/{{ ansible_user_id }}/code
+        mode: 0777
+        recurse: yes
+        force: yes
+        state: directory
+
+    - name: start tomcat
+      become: yes
+      become_user: root
+      command: nohup /home/{{ ansible_user_id }}/code/apache-tomcat-9.0.0.M26/bin/startup.sh
+
+    - name: echo newhost
+      command: cat newhost
+      register: newhost_res
+      delegate_to: localhost
+
+
+    - name: Add to haproxy conf
+      lineinfile:
+        path: templates/haproxy.cfg
+        insertafter: EOF
+        line: "  server {{  newhost_res.stdout }}  {{  newhost_res.stdout }}:80 cookie A check"
+        backup: yes
+      delegate_to: localhost
+
+- hosts: localhost
+  gather_facts: yes
+
+  tasks: 
+
+    - name: Update HAProxy config
+      template: src=templates/haproxy.cfg dest=/etc/haproxy/haproxy.cfg backup=yes
+      notify: 
+        - restart haproxy
+      become: yes  
+
+
+  handlers:
+    - name: restart haproxy
+      service: name=haproxy state=restarted
+      become: yes
+
+
+
+
+
+
+
+
+

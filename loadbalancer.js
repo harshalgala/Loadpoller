@@ -1,17 +1,35 @@
+/*
+install:
+1) ansible
+2) boto
+3) export credentials
+*/
+
 var http = require('http');
 var request = require('request');
+var os = require('os');
 var express = require('express');
-var lineReader = require('line-reader');
+var app = express();
+
 var exec = require('child_process').exec;
-var io = require('socket.io')(3002);
-var Ansible = require('node-ansible');
-var ansiblePlaybookCli = require('ansible-playbook-cli-js');
 
 // websocket server that website connects to.
+var io = require('socket.io')(3002);
+var allIps=[];
+//ansible
+var Ansible = require('node-ansible');
+var ansiblePlaybookCli = require('ansible-playbook-cli-js');
+//
+/* TO do:
+1) Update timer
+2) Update inventory path
+3) call scaleup and scale down
 
-var app = express();
-var inventoryPath = "/home/harshal/Desktop/Loadpoller/inventory";
-var allIps = [];
+*/
+//reading inventory
+var inventoryPath="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/inventory_folder/inventory";
+fs = require('fs')
+//ansible code
 var Options = ansiblePlaybookCli.Options;
 var AnsiblePlaybook = ansiblePlaybookCli.AnsiblePlaybook;
 var options = new Options(
@@ -19,71 +37,88 @@ var options = new Options(
 );
 var ansiblePlaybook = new AnsiblePlaybook(options);
 
-/* TO do:
-1) Update timer
-2) Update inventory path
-3) call scaleup and scale down
-*/
+//
+/*fs.readFile('/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/inventory_folder/inventory', 'utf8', function (err,data) {
+  if (err) {
+    return console.log(err);
+  }
+  console.log(data+" *****************");
+});*/
 
-//reading inventory
-lineReader.eachLine(inventoryPath, function (line, last) {
-	var ip = line.substr(0, line.indexOf(' '));
-	allIps.push(ip);
-	console.log(allIps);
+var lineReader = require('line-reader');
+
+
+lineReader.eachLine(inventoryPath, function(line, last) {
+  var ip=line.substr(0,line.indexOf(' '));
+  allIps.push(ip);
+  console.log(allIps);
+  // do whatever you want with line...
+  
 });
 
-for (var i = 1; i < allIps.length; i++) {
-	//console.log(allIps[i]);
+/*setTimeout(function() {
+
+}, 5000);*/
+//console.log(allIps);
+for(var i=1;i<allIps.length;i++){
+	console.log(allIps[i]);
 }
-//console.log("here..........");
+console.log("here..........");
 
 //requesting all instances
 var server = app.listen(3001, function () {
-	var host = server.address().address;
-	var port = server.address().port;
+  var host = server.address().address;
+  var port = server.address().port;
+  var ansibleDir="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/Loadpoller/"
+  console.log('Example app listening at http://%s:%s', host, port);
 
-	console.log('Example app listening at http://%s:%s', host, port);
-
-	var requestLoop = setInterval(function () {
-		for (var i = 1; i < allIps.length; i++) {
-			if (allIps[i] == "") {
-				continue;
-			}
-			//console.log("listening: "+allIps[i]);
-
-			request('http://' + allIps[i] + '/health', {
-				json: true
-			}, (err, res) => {
-				//console.log('Requesting');
-				var cpu_usage = res.body;
-				if (cpu_usage > 30) {
-					console.log("!!Alert!! CPU utilization:" + cpu_usage);
-					ansiblePlaybook.command('thresholdmore.yml -i '+inventoryPath).then(function (data) {
+  var requestLoop = setInterval(function(){
+  	for(var i=1;i<allIps.length;i++){
+  	if(allIps[i]==""){
+  		continue;
+  	}
+  	
+  	var myUrl="http://"+allIps[i]+":3000/health";
+  	console.log("listening: "+myUrl);
+	  request(myUrl, { json: true }, ( err, res) => {
+	    	console.log('Requesting');
+	    	var cpu_usage=res.body;
+	    	if(cpu_usage > 40){
+	    		console.log("Alert !!!! CPU utilization:"+cpu_usage);
+	    		//ansible code
+	    		ansiblePlaybook.command('-i "localhost," -c local '+ansibleDir+'scale.yaml').then(function (data) {
 						console.log('data = ', data); 
-					  });				  
-					
-				} else if(cpu_usage< 10){
-					console.log("Running smoothly. CPU utilization:" + cpu_usage);
-					ansiblePlaybook.command('thresholdless.yml -i '+inventoryPath).then(function (data) {
+					  });
+	    		//
+	    	}
+	    	else if(cpu_usage<20){
+	    		//scaledown
+	    		ansiblePlaybook.command('-i "inventory" -c local '+ansibleDir+'scale_down.yml').then(function (data) {
 						console.log('data = ', data); 
-					  });					  
-				}
-				if (err) {
-					return console.log(err);
-				}
-			});
-		}
-	}, 2000);
+					  });
+	    		console.log("Less load. Scaling down. CPU utilization:"+cpu_usage);
+	    	}
+	    	else{
+	    		console.log("Running smoothly. CPU utilization:"+cpu_usage);
+	    	}
+	    	//console.log(res.body);
+	  		if (err) { 
+	  			return console.log(err); 
+	  		}
+		});
+	}
+	},2000);
 
-
+	
 });
 
 
-app.use(function (req, res, next) {
+app.use(function(req, res, next){
 	console.log(req.method, req.url);
 	// handle next
-	next();
+	next(); 
 });
-app.get('/', function (req, res) {
-	res.send('Itrust Doctor Monkey');
+app.get('/', function(req, res) {
+  res.send('Itrust Doctor Monkey');
 });
+
