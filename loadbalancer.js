@@ -14,7 +14,7 @@ var app = express();
 var exec = require('child_process').exec;
 
 // websocket server that website connects to.
-var io = require('socket.io')(3002);
+var io = require('socket.io')(3000);
 var allIps=[];
 //ansible
 var Ansible = require('node-ansible');
@@ -27,7 +27,7 @@ var ansiblePlaybookCli = require('ansible-playbook-cli-js');
 
 */
 //reading inventory
-var inventoryPath="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/inventory_folder/inventory";
+var inventoryPath="/home/ubuntu/DevOps_Milestone4_Special/inventory";
 fs = require('fs')
 //ansible code
 var Options = ansiblePlaybookCli.Options;
@@ -66,10 +66,10 @@ for(var i=1;i<allIps.length;i++){
 console.log("here..........");
 
 //requesting all instances
-var server = app.listen(3001, function () {
+var server = app.listen(3005, function () {
   var host = server.address().address;
   var port = server.address().port;
-  var ansibleDir="/home/hkgurjar/Devops/DevOpsMileStone4/Monitoring/Loadpoller/"
+  var ansibleDir="/home/ubuntu/DevOps_Milestone4_Special/"
   console.log('Example app listening at http://%s:%s', host, port);
 
   var requestLoop = setInterval(function(){
@@ -93,7 +93,7 @@ var server = app.listen(3001, function () {
 	    	}
 	    	else if(cpu_usage<20){
 	    		//scaledown
-	    		ansiblePlaybook.command('-i "inventory" -c local '+ansibleDir+'scale_down.yml').then(function (data) {
+	    		ansiblePlaybook.command('-i '+inventoryPath+' '+ansibleDir+'scale_down.yml -e "deletehostip='+allIps[i]+'"').then(function (data) {
 						console.log('data = ', data); 
 					  });
 	    		console.log("Less load. Scaling down. CPU utilization:"+cpu_usage);
