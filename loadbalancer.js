@@ -2,7 +2,7 @@
 install:
 1) ansible
 2) boto
-3) export credentials
+3) export creden
 */
 
 var http = require('http');
@@ -14,7 +14,7 @@ var app = express();
 var exec = require('child_process').exec;
 
 // websocket server that website connects to.
-var io = require('socket.io')(3000);
+var io = require('socket.io')(3002);
 var allIps=[];
 //ansible
 var Ansible = require('node-ansible');
@@ -66,7 +66,7 @@ for(var i=1;i<allIps.length;i++){
 console.log("here..........");
 
 //requesting all instances
-var server = app.listen(3005, function () {
+var server = app.listen(3001, function () {
   var host = server.address().address;
   var port = server.address().port;
   var ansibleDir="/home/ubuntu/DevOps_Milestone4_Special/"
@@ -86,7 +86,7 @@ var server = app.listen(3005, function () {
 	    	if(cpu_usage > 40){
 	    		console.log("Alert !!!! CPU utilization:"+cpu_usage);
 	    		//ansible code
-	    		ansiblePlaybook.command('-i "localhost," -c local '+ansibleDir+'scale.yaml').then(function (data) {
+	    		ansiblePlaybook.command('-i "localhost," -c local '+ansibleDir+'scale.yaml -e "aws_secret_key='+process.env.AWS_SECRET_KEY+'" -e "aws_access_key='+process.env.AWS_ACCESS_KEY_ID+'"').then(function (data) {
 						console.log('data = ', data); 
 					  });
 	    		//
@@ -107,7 +107,7 @@ var server = app.listen(3005, function () {
 	  		}
 		});
 	}
-	},2000);
+	},20000);
 
 	
 });
