@@ -19,7 +19,7 @@ var Ansible = require('node-ansible');
 var ansiblePlaybookCli = require('ansible-playbook-cli-js');
 
 var allIps  = [];
-
+var allLines = [];
 //
 /* TO do:
 1) Update timer
