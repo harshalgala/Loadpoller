@@ -84,7 +84,7 @@ var server = app.listen(4005, function () {
 	    	}
 	    	else if(cpu_usage<20){
 				//scaledown
-				var k = allIps[i].toString();
+				var k = allIps[i]+'';
                 lineReader.eachLine(inventoryPath, function(line, last) {
 					var wholeline=line.substr(0,line.indexOf('\n'));
 					allLines.push(wholeline);
