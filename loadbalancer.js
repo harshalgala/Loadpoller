@@ -83,6 +83,9 @@ var server = app.listen(4005, function () {
 					ansiblePlaybook.command('-i "localhost," -c local ' + ansibleDir + 'scale.yaml -e "aws_secret_key=' + process.env.AWS_SECRET_KEY + '" -e "aws_access_key=' + process.env.AWS_ACCESS_KEY_ID + '"', function (err, data) {
 						console.log('data = ', data);
 					});
+					ansiblePlaybook.command('-i ' + inventoryPath + ' ' + ansibleDir + 'monitor.yml', function (err, data) {
+						console.log('data = ', data);
+					});
 					//
 				} else if ((cpu_usage < 20) && (allIps.length > 3)) {
 					//scaledown
