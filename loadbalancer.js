@@ -29,7 +29,7 @@ var allIps  = [];
 
 //reading inventory
 var inventoryPath="/home/ubuntu/DevOps_Milestone4_Special/inventory";
-fs = require('fs')
+var fs = require('fs')
 
 //ansible code
 var Options = ansiblePlaybookCli.Options;
@@ -83,7 +83,19 @@ var server = app.listen(4005, function () {
 	    		//
 	    	}
 	    	else if(cpu_usage<20){
-	    		//scaledown
+				//scaledown
+				var k = allIps[i].toString();
+                lineReader.eachLine(inventoryPath, function(line, last) {
+					var wholeline=line.substr(0,line.indexOf('\n'));
+					allLines.push(wholeline);
+				  });
+
+				  for(var j=1;j<allLines.length;j++) {
+						if(allLines[j].match(k)){
+							delete allLines[j];
+						}
+					}
+
 	    		console.log("!!!Below Threshold!!!\n Scaling down.\n CPU utilization:"+cpu_usage);
 	    		ansiblePlaybook.command('-i '+inventoryPath+' '+ansibleDir+'scale_down.yml -e "deletehostip='+allIps[i]+'"').then(function (data) {
 						console.log('data = ', data); 
@@ -103,7 +115,6 @@ var server = app.listen(4005, function () {
 	
 });
 
-
 app.use(function(req, res, next){
 	console.log(req.method, req.url);
 	// handle next
@@ -112,4 +123,3 @@ app.use(function(req, res, next){
 app.get('/', function(req, res) {
   res.send('Itrust Surgeon Monkey Running');
 });
-
